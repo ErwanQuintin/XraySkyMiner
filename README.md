@@ -8,4 +8,4 @@ Requirements:
 "LoadMasterSources.py" will load the relevant multi-instrument sources in custom Python objects. This gives access to flux and band photometry.
 "DataMining.py" will use the loaded multi-instrument sources and allow you to study their properties
 
-To function, the catalog data needs to be downloaded from the following link: TBD and unzipped in the same file as the Python scripts.
+To function, the catalog data needs to be downloaded from the following [link](https://drive.google.com/file/d/15rhDMWqbiylh0lS5gZ9jS7VzjHe29vBc/view?usp=drive_link)https://drive.google.com/file/d/15rhDMWqbiylh0lS5gZ9jS7VzjHe29vBc/view?usp=drive_link and unzipped in the same file as the Python scripts.

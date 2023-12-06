@@ -663,7 +663,6 @@ def load_master_sources(file_to_load):
         ms.glade_distance=line['d_L']
         ms.glade_distance_err=line['d_L_err']
         ms.glade_bh_mass=line['GLADE_bh_mass']
-        ms.glade_bh_mass_err=line['GLADE_bh_mass_err']
         ms.flux_lum_conv_factor=4*np.pi*(ms.glade_distance*3.086E+24)**2
 
         dic_master_sources[ms_id] = ms

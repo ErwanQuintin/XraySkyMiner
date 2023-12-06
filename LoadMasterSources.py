@@ -17,7 +17,7 @@ style="bmh"
 cmap_to_use="turbo"
 
 
-path_to_catalogs=os.path.join(os.getcwd(),'FullCatalogs')
+path_to_catalogs=os.path.join(os.getcwd(),'LowMassCatalogs')
 
 catalogs = ["XMM"]#,"Chandra","Swift","eRosita","Slew","RASS","WGACAT","Stacked"]
 

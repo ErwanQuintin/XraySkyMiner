@@ -8,8 +8,6 @@ from astropy.time import Time
 from tqdm import tqdm
 import os
 import webbrowser
-import seaborn as sns
-from itertools import combinations
 from matplotlib import rc
 plt.rcParams.update({'font.size': 15})
 rc('text', usetex=True)
@@ -18,7 +16,15 @@ rc('text', usetex=True)
 style="bmh"
 cmap_to_use="turbo"
 
+
+path_to_catalogs=os.path.join(os.getcwd(),'FullCatalogs')
+
+catalogs = ["XMM"]#,"Chandra","Swift","eRosita","Slew","RASS","WGACAT","Stacked"]
+
 def click_action(ra, dec, xmm_name, swift_name, has_efeds=False, has_sdss=False):
+    """Function used as click action when you plot the lightcurve of an object. Will open a window in a browser
+    (for now firefox, you can change it), with many multi-wavelength information"""
+
     url_esaskyDSS = "http://sky.esa.int/?target="+str(np.round(ra,4))+" "+str(np.round(dec,4))+"&hips=DSS2+color&fov=0.1&cooframe=J2000&sci=true&lang=en"
     url_esaskyXMM = "http://sky.esa.int/?target=" + str(np.round(ra, 4)) + " " + str(
         np.round(dec, 4)) + "&hips=XMM-Newton+EPIC+color&fov=0.1&cooframe=J2000&sci=true&lang=en"
@@ -46,7 +52,6 @@ def click_action(ra, dec, xmm_name, swift_name, has_efeds=False, has_sdss=False)
     url_rosat= f"http://xmm-ssc.irap.omp.eu/claxson/xray_analyzer2.php?srcquery={ra}%20{dec}"
     webbrowser.get('firefox').open(url_rosat)
 
-catalogs = ["XMM","Chandra","Swift","eRosita","Slew","RASS","WGACAT","Stacked"]#,"NewXMM"]
 
 posErr_Names = {}
 src_names={}
@@ -94,6 +99,7 @@ time_names={"XMM": "MJD_START",
             "UVOT":"DATE_MIN"}
 
 obsid_names={"XMM":"OBS_ID","Swift":"ObsID", "Stacked":"OBS_ID", "OM":"OBSID","UVOT":"OBSID"}
+short_term_var_name={"XMM":"VAR_FLAG","Chandra":"var_code"}
 
 band_flux_names = {"XMM":["EP_1_FLUX","EP_2_FLUX","EP_3_FLUX","EP_4_FLUX","EP_5_FLUX"],
                   "Chandra":["flux_powlaw_aper_s","flux_powlaw_aper_m","flux_powlaw_aper_h"],
@@ -196,7 +202,9 @@ class Source:
 
     In the end, each Source will be associated to a unique MasterSource, each MasterSource having Source objects from several distinct catalogs
     """
-    def __init__(self, catalog, iau_name, flux, fluxerr, timesteps, band_flux, band_fluxerr, obsids=[],swift_stacked_flux=[], swift_stacked_flux_err=[[],[]], swift_stacked_times=[[],[]], xmm_offaxis=[], short_term_var=[]):
+    def __init__(self, catalog, iau_name, flux, fluxerr, timesteps, band_flux, band_fluxerr, obsids=[],
+                 swift_stacked_flux=[], swift_stacked_flux_err=[[],[]], swift_stacked_times=[[],[]],
+                 xmm_offaxis=[], short_term_var=[]):
         self.catalog = catalog
         self.name = iau_name
         self.master_source = []
@@ -245,11 +253,12 @@ class Source:
         if len(flux)>0:
             self.min_upper = min(np.array(flux) + np.array(fluxerr[1]))
             self.max_lower = max(np.array(flux) - np.array(fluxerr[0]))
-        if swift_stacked_flux!=[]:
+        if len(swift_stacked_flux)>0:
             stacked_min = min(np.array(swift_stacked_flux)+np.array(swift_stacked_flux_err[1]))
             if stacked_min<0.5*self.min_upper:
                 self.swift_stacked_variable = True
             self.min_upper = min(self.min_upper, stacked_min)
+
         if len(flux)+len(swift_stacked_flux) > 1:
             self.var = self.max_lower/self.min_upper
 
@@ -319,10 +328,10 @@ class MasterSource:
                 self.min_time = min(start, self.min_time)
                 self.max_time = max(stop, self.max_time)
                 self.sources_timesteps.append((start+stop)/2)
-            if source.xmm_offaxis!=[]:
+            if len(source.xmm_offaxis)>0:
                 if np.nanmin(source.xmm_offaxis)>1:
                     self.never_on_axis_xmm = True
-            if source.timesteps!=[]:
+            if len(source.timesteps)>0:
                 self.min_time = min(min(source.timesteps), self.min_time)
                 self.max_time = max(max(source.timesteps), self.max_time)
             for var_flag in source.short_term_var:
@@ -488,9 +497,9 @@ class MasterSource:
 
 #plt.rcParams['text.usetex'] = True
 
-def load_relevant_source(cat,file_to_load):
+def load_source(cat):
     print(f"Loading {cat}...")
-    raw_data = fits.open(file_to_load, memmap=True)
+    raw_data = fits.open(os.path.join(path_to_catalogs,cat+'.fits'), memmap=True)
     sources_raw = raw_data[1].data
     sources_raw = Table(sources_raw)
     sources_raw = sources_raw[np.argsort(sources_raw[src_names[cat]])]
@@ -507,10 +516,20 @@ def load_relevant_source(cat,file_to_load):
 
     #We divide up the catalog in sub-samples corresponding to each source
     timesteps = np.split(np.array(sources_raw[time_names[cat]]), indices_for_source)
+    if cat in ("XMM","Stacked"):
+        xmm_offaxes = np.split(np.array(sources_raw["EP_OFFAX"]), indices_for_source)
+    else:
+        xmm_offaxes = [[] for elt in indices_for_source]
     if cat in ("XMM","Swift","Stacked"):
         obsids = np.split(np.array(sources_raw[obsid_names[cat]]), indices_for_source)
     else:
         obsids = [[] for elt in indices_for_source]
+    if cat in ("XMM","Chandra"):
+        short_term_var_flags = np.split(np.array(sources_raw[short_term_var_name[cat]]), indices_for_source)
+    elif cat == "Swift":
+        short_term_var_flags = np.split(np.array(sources_raw["PvarPchiSnapshot_band0"])<1e-3, indices_for_source)
+    else:
+        short_term_var_flags = [[] for elt in indices_for_source]
     names = np.split(np.array(sources_raw[src_names[cat]]), indices_for_source)
 
     band_fluxes = []
@@ -539,7 +558,7 @@ def load_relevant_source(cat,file_to_load):
     dic_sources = {}
 
     #This loops on all sources, to build the Source objects
-    for (index, flux, flux_error, time, name, band_flux, band_fluxerr, obsid) in zip(range(len(fluxes)),fluxes, flux_errors, timesteps, names, band_fluxes, band_fluxerr, obsids):
+    for (index, flux, flux_error, time, name, band_flux, band_fluxerr, obsid, xmm_offaxis, short_term_var) in zip(range(len(fluxes)),fluxes, flux_errors, timesteps, names, band_fluxes, band_fluxerr, obsids, xmm_offaxes, short_term_var_flags):
             swift_stacked_flux=[]
             swift_stacked_flux_err=[[],[]]
             swift_stacked_times=[[],[]]
@@ -559,12 +578,12 @@ def load_relevant_source(cat,file_to_load):
                 band_flux = band_flux[obsid < 1e10]
                 band_fluxerr = [band_fluxerr[0][obsid < 1e10], band_fluxerr[1][obsid < 1e10]]
                 obsid = obsid[obsid < 1e10]
-            source = Source(cat, name[0].strip(), flux, flux_error, time, band_flux, band_fluxerr, obsid, swift_stacked_flux,swift_stacked_flux_err,swift_stacked_times)
+            source = Source(cat, name[0].strip(), flux, flux_error, time, band_flux, band_fluxerr, obsid, swift_stacked_flux,swift_stacked_flux_err,swift_stacked_times, xmm_offaxis, short_term_var)
             dic_sources[name[0].strip()] = source
     return dic_sources
 
 def load_XMM_upperlimits(dic_master_sources):
-    raw_data = fits.open(f"{path_to_master_sources}Master_source_XMM_UpperLimits.fits", memmap=True)
+    raw_data = fits.open(os.path.join(path_to_catalogs,'Master_source_XMM_UpperLimits.fits'), memmap=True)
     sources_raw = raw_data[1].data
     sources_raw = Table(sources_raw)
     xmm_pointed_ul = sources_raw[sources_raw["obstype"]=="pointed"]
@@ -572,21 +591,16 @@ def load_XMM_upperlimits(dic_master_sources):
     print("Loading XMM pointed upper limits on Master Sources...")
     pbar = tqdm(total=len(dates))
     for line, date in zip(xmm_pointed_ul, dates):
-        ms = dic_master_sources[line["MS_ID"]]
-        if ("Stacked" not in ms.sources.keys()) or (int(line["obsid"]) not in ms.sources["Stacked"].obsids):
-            #if int(line["obsid"]) not in ms.sources["Stacked"].obsids:
-                #In the case of a simultaneous Stacked detection / RapidXMM upper limit, we take the Stacked detection
-                ms.xmm_ul.append(line["ul_flux8_3sig"])
-                ms.xmm_ul_dates.append(date)
-                ms.xmm_ul_obsids.append(line["obsid"])
-                ms.min_time = min(date, ms.min_time)
-                ms.max_time = max(date, ms.max_time)
-        """else:
-                ms.xmm_ul.append(line["ul_flux8_3sig"])
-                ms.xmm_ul_dates.append(date)
-                ms.xmm_ul_obsids.append(line["obsid"])
-                ms.min_time = min(date, ms.min_time)
-                ms.max_time = max(date, ms.max_time)"""
+        if line["MS_ID"] in dic_master_sources.keys():
+            ms = dic_master_sources[line["MS_ID"]]
+            if ("Stacked" not in ms.sources.keys()) or (int(line["ObsID"]) not in ms.sources["Stacked"].obsids):
+                #if int(line["obsid"]) not in ms.sources["Stacked"].obsids:
+                    #In the case of a simultaneous Stacked detection / RapidXMM upper limit, we take the Stacked detection
+                    ms.xmm_ul.append(line["ul_8_flux_EPIC"])
+                    ms.xmm_ul_dates.append(date)
+                    ms.xmm_ul_obsids.append(line["ObsID"])
+                    ms.min_time = min(date, ms.min_time)
+                    ms.max_time = max(date, ms.max_time)
         pbar.update(1)
     pbar.close()
 
@@ -595,66 +609,45 @@ def load_XMM_upperlimits(dic_master_sources):
     dates = Time(xmm_slew_ul["MJD_Date"], format="mjd").mjd
     pbar = tqdm(total=len(dates))
     for line, date in zip(xmm_slew_ul, dates):
-        ms = dic_master_sources[line["MS_ID"]]
-        ms.slew_ul.append(line["ul_flux8_3sig"])
-        ms.slew_ul_dates.append(date)
-        ms.slew_ul_obsids.append(line["obsid"])
-        ms.min_time = min(date, ms.min_time)
-        ms.max_time = max(date, ms.max_time)
+        if line["MS_ID"] in dic_master_sources.keys():
+            ms = dic_master_sources[line["MS_ID"]]
+            ms.slew_ul.append(line["ul_8_flux_EPIC"])
+            ms.slew_ul_dates.append(date)
+            ms.slew_ul_obsids.append(line["ObsID"])
+            ms.min_time = min(date, ms.min_time)
+            ms.max_time = max(date, ms.max_time)
         pbar.update(1)
     pbar.close()
 
 
-    """#Updating variabilities using upper limits
-    tab_improvement_withxxm = []
-    tab_improvement_withoutxxm = []
-    to_plot = []
-    improve=[]
+    #Updating variabilities using upper limits
     for ms in dic_master_sources.values():
         if len(ms.xmm_ul)>0:
-            if ms.min_upper <1 and min(ms.xmm_ul) > 0:
-                if "XMM" in ms.sources.keys() or "Stacked" in ms.sources.keys():
-                    tab_improvement_withxxm.append(ms.min_upper / min(ms.xmm_ul))
-                else:
-                    tab_improvement_withoutxxm.append(ms.min_upper / min(ms.xmm_ul))
-                    if (ms.min_upper / min(ms.xmm_ul)>10):
-                        to_plot.append(ms)
-                        improve.append(ms.min_upper / min(ms.xmm_ul))
-            #ms.min_upper = min(ms.min_upper, min(ms.xmm_ul))
-        #if len(ms.slew_ul)>0:
-        #    ms.min_upper = min(ms.min_upper, min(ms.slew_ul))
-        ms.var = ms.max_lower/ms.min_upper"""
-    """plt.hist(tab_improvement_withxxm, bins=np.geomspace(1e-3, 1e3, 50), color="royalblue", label="Had XMM detection")
-    plt.hist(tab_improvement_withoutxxm, bins=np.geomspace(1e-3, 1e3, 50), color="r", label="No XMM detection")
-    plt.xscale('log')
-    plt.legend()
-    plt.xlabel("Minimum detection / XMM-Newton upper limit")
-    order = np.argsort(improve)[::-1]
-    for ind in order[:10]:
-        ms = to_plot[ind]
-        ms.plot_lightcurve()"""
+            ms.min_upper = min(ms.min_upper, min(ms.xmm_ul))
+        ms.var = ms.max_lower/ms.min_upper
+
 
 def load_Chandra_upperlimits(dic_master_sources):
     print("Load Chandra upper limits...")
-    raw_data = fits.open(f"{path_to_master_sources}Chandra_UL.fits", memmap=True)
+    raw_data = fits.open(os.path.join(path_to_catalogs,'Chandra_UL.fits'), memmap=True)
     sources_raw = raw_data[1].data
     sources_raw = Table(sources_raw)
     for line in tqdm(sources_raw):
-        ms = dic_master_sources[line["MS_ID"]]
-        ms.chandra_ul.append(line["flux_aper_hilim_b"])
-        ms.chandra_ul_dates.append(line["gti_mjd_obs"])
-
+        if line["MS_ID"] in dic_master_sources.keys():
+            ms = dic_master_sources[line["MS_ID"]]
+            ms.chandra_ul.append(line["flux_aper_hilim_b"])
+            ms.chandra_ul_dates.append(line["gti_mjd_obs"])
 
 def load_master_sources(file_to_load):
     """Loads the multi-instruments sources in a dictionary"""
     print(f"Loading Master Sources...")
-    raw_data = fits.open(os.path.join(file_to_load, 'Master_source_cone.fits'), memmap=True)
+    raw_data = fits.open(os.path.join(path_to_catalogs, file_to_load), memmap=True)
     sources_raw = raw_data[1].data
     sources_raw = Table(sources_raw)
 
     tab_catalog_sources = {}
     for cat in catalogs:
-        tab_catalog_sources[cat] = load_relevant_source(cat,os.path.join(file_to_load,cat+'.fits'))
+        tab_catalog_sources[cat] = load_source(cat)
 
     dic_master_sources = {}
     for line in tqdm(sources_raw):
@@ -666,9 +659,16 @@ def load_master_sources(file_to_load):
                     tab_sources_for_this_ms.append(tab_catalog_sources[cat][name])
         ms_id = line["MS_ID"]
         ms = MasterSource(ms_id, tab_sources_for_this_ms, line["MS_RA"], line["MS_DEC"], line["MS_POSERR"])
+
+        ms.glade_distance=line['d_L']
+        ms.glade_distance_err=line['d_L_err']
+        ms.glade_bh_mass=line['GLADE_bh_mass']
+        ms.glade_bh_mass_err=line['GLADE_bh_mass_err']
+        ms.flux_lum_conv_factor=4*np.pi*(ms.glade_distance*3.086E+24)**2
+
         dic_master_sources[ms_id] = ms
-    #load_XMM_upperlimits(dic_master_sources)
-    #load_Chandra_upperlimits(dic_master_sources)
+    load_XMM_upperlimits(dic_master_sources)
+    load_Chandra_upperlimits(dic_master_sources)
 
     print("Master sources loaded!")
     return dic_master_sources
